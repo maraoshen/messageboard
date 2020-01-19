@@ -1,9 +1,11 @@
-import uuid
-import os
-import boto3
 from boto3.dynamodb.conditions import Attr
-
 from flask import Flask, jsonify, request
+
+import boto3
+import botocore
+import os
+import uuid
+
 app = Flask(__name__)
 
 USERS_TABLE = os.environ['USERS_TABLE']
@@ -21,11 +23,6 @@ else:
     client = boto3.client('dynamodb')
 
 
-@app.route("/")
-def hello():
-    return "Hello World!"
-
-
 @app.route("/users/<string:user_id>")
 def get_user(user_id):
     resp = client.get_item(
@@ -39,6 +36,7 @@ def get_user(user_id):
         return jsonify({'error': 'User does not exist'}), 404
 
     return jsonify(item)
+
 
 @app.route("/users")
 def get_all_users():
@@ -60,21 +58,26 @@ def create_user():
     if not email or not name:
         return jsonify({'error': 'Please provide email and name'}), 400
 
-    user_id = uuid.uuid4().hex
-    resp = client.put_item(
-        TableName=USERS_TABLE,
-        ConditionExpression='attribute_not_exists(email)',
-        Item={
-            'userId': {'S': user_id },
-            'name': {'S': name },
-            'email': {'S': email}
-        }
-    )
+    user_id = uuid.uuid3(uuid.NAMESPACE_URL, 'mailto:{}'.format(email)).hex
+    try:
+        resp = client.put_item(
+            TableName=USERS_TABLE,
+            Item={
+                'userId': {'S': user_id },
+                'name': {'S': name },
+                'email': {'S': email}
+            },
+            ConditionExpression='attribute_not_exists(email)'
+        )
+    except botocore.exceptions.ClientError:
+        return jsonify({'error': 'Provided email already exists'}), 400
 
     return jsonify({
         'userId': user_id,
-        'name': name
+        'name': name,
+        'email': email
     })
+
 
 @app.route("/messageboards")
 def get_all_messageboards():
@@ -88,26 +91,31 @@ def get_all_messageboards():
 
     return jsonify(items)
 
+
 @app.route("/messageboards", methods=["POST"])
 def create_messageboard():
     boardname = request.json.get('boardname')
     if not boardname:
         return jsonify({'error': 'Please provide name for the Messageboard'}), 400
 
-    id = uuid.uuid4().hex
-    resp = client.put_item(
-        TableName=MESSAGEBOARDS_TABLE,
-        ConditionExpression='attribute_not_exists(boardname)',
-        Item={
-            'id': {'S': id },
-            'boardname': {'S': boardname }
-        }
-    )
+    id = uuid.uuid3(uuid.NAMESPACE_URL, '{}.com'.format(boardname)).hex
+    try:
+        resp = client.put_item(
+            TableName=MESSAGEBOARDS_TABLE,
+            ConditionExpression='attribute_not_exists(boardname)',
+            Item={
+                'id': {'S': id },
+                'boardname': {'S': boardname }
+            }
+        )
+    except botocore.exceptions.ClientError:
+        return jsonify({'error': 'Messageboard name already exists'}), 400
 
     return jsonify({
         'id': id,
         'boardname': boardname
     })
+
 
 @app.route("/messageboards/<string:id>/messages")
 def get_messages(id):
@@ -122,6 +130,7 @@ def get_messages(id):
         return jsonify({'error': 'No messages found'}), 404
 
     return jsonify(items)
+
 
 @app.route("/messageboards/<string:board_id>/messages", methods=["POST"])
 def create_message(board_id):
@@ -145,6 +154,7 @@ def create_message(board_id):
         'id': id,
         'message': message
     })
+
 
 @app.route("/users/<string:user_id>/messageboards")
 def get_user_boards(user_id):

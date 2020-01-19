@@ -46,11 +46,6 @@ provider:
     MESSAGES_TABLE: ${self:custom.messageboardsTableName}
 
 functions:
-  app:
-    handler: wsgi.handler
-    events:
-      - http: ANY /
-      - http: 'ANY {proxy+}'
   getUser:
     handler: wsgi.handler
     events:
